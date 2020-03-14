@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import javax.crypto.SecretKey;
 
 public class Query {
-    public enum  BuildType{
+    public enum FormatType {
         Pairs,
         JSONPatch
     }
@@ -34,7 +34,7 @@ public class Query {
         names.add(name);
 
         String val= "{";
-        val+= obj.build(BuildType.JSONPatch);
+        val+= obj.build(FormatType.JSONPatch);
         val+= "}";
 
         values.add(val);
@@ -76,19 +76,19 @@ public class Query {
         return true;
     }
 
-    public String build(BuildType buildType){
+    public String build(FormatType formatType){
         StringBuilder sb= new StringBuilder();
 
         for(int i=0; i<this.size(); i++){
 
-            if(buildType==BuildType.Pairs) {
+            if(formatType == FormatType.Pairs) {
                 if (i > 0) {
                     sb.append("&");
                 }
                 sb.append(names.get(i));
                 sb.append("=");
                 sb.append(values.get(i));
-            } else if(buildType==BuildType.JSONPatch){
+            } else if(formatType == FormatType.JSONPatch){
 
                 //If name is not empty write its name
                 if(!names.get(i).equals("")){

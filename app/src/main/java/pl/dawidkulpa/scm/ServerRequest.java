@@ -6,19 +6,16 @@ import android.util.Log;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.HttpURLConnection;
-import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.ArrayList;
 
 import javax.crypto.SecretKey;
 
-public class ServerConnectionManager extends AsyncTask<String, Integer, Integer> {
+public class ServerRequest extends AsyncTask<String, Integer, Integer> {
     public interface OnFinishListener {
         void onFinish(int respCode, JSONObject jObject);
     }
@@ -27,111 +24,92 @@ public class ServerConnectionManager extends AsyncTask<String, Integer, Integer>
         void onProgress(int p);
     }
 
-    public static final String CONTENTTYPE_TEXT="application/text";
-    public static final String CONTENTTYPE_JSONPATCH="application/json-patch+json";
-    public static final String CONTENTTYPE_JSON="application/json";
+    public static final String HEADER_CONTENT_TYPE="Content-type";
+
+    public static final String CONTENT_TYPE_TEXT="application/text";
+    public static final String CONTENT_TYPE_JSONPATCH="application/json-patch+json";
+    public static final String CONTENT_TYPE_JSON="application/json";
 
     public static final String METHOD_POST="POST";
     public static final String METHOD_GET="GET";
     public static final String METHOD_PUT="PUT";
 
-    public static final String OUTTYPE_TEXT="text";
-    public static final String OUTTYPE_JSON="json";
+    public static final String RESPONSE_TYPE_TEXT ="text";
+    public static final String RESPONSE_TYPE_JSON ="json";
 
-    public static final int NO_TIMEOUT=-1;
+    public static final int TIMEOUT_NONE=-1;
+    public static final int TIMEOUT_DEFAULT=10000;
 
     private JSONObject jObj;
     private OnFinishListener onFinishListener;
     private OnProgressListener onProgressListener;
-    private Query postData;
+    private Query requestData;
     private ArrayList<HeaderEntry> headerEntries;
-    private Query.BuildType buildType;
-    private String contentType;
-    private String method;
-    private String outtype;
+    private Query.FormatType queryType;
+    private String requestMethod;
+    private String responseType;
     private int timeout;
 
-    public ServerConnectionManager(Query.BuildType buildType, int timeout, OnFinishListener onFinishListener){
+    public ServerRequest(Query.FormatType queryFormat, String requestMethod, String responseType, int timeout, OnFinishListener onFinishListener){
         this.onFinishListener= onFinishListener;
-        postData= new Query();
-        this.buildType= buildType;
-        method=METHOD_POST;
-        contentType="";
-        outtype=OUTTYPE_JSON;
+        requestData = new Query();
+        this.queryType = queryFormat;
+        this.requestMethod =requestMethod;
+        this.responseType = RESPONSE_TYPE_JSON;
         headerEntries= new ArrayList<>();
         this.timeout= timeout;
     }
 
-    @Deprecated
-    public ServerConnectionManager(Query.BuildType buildType, OnFinishListener onFinishListener){
-        this.onFinishListener= onFinishListener;
-        postData= new Query();
-        this.buildType= buildType;
-        method=METHOD_POST;
-        contentType="";
-        outtype=OUTTYPE_JSON;
-        headerEntries= new ArrayList<>();
-        timeout= NO_TIMEOUT;
-    }
-
-    @Deprecated
-    public ServerConnectionManager(OnFinishListener onFinishListener, Query.BuildType buildType){
-        this.onFinishListener= onFinishListener;
-        postData= new Query();
-        this.buildType= buildType;
-        method=METHOD_POST;
-        contentType="";
-        outtype=OUTTYPE_JSON;
-        headerEntries= new ArrayList<>();
-        timeout= NO_TIMEOUT;
-    }
-
+    // Set listeners
     public void setOnFinishListener(OnFinishListener onFinishListener) {
         this.onFinishListener= onFinishListener;
-        postData= new Query();
+        requestData = new Query();
     }
 
     public void setOnProgressListener(OnProgressListener onProgressListener){
         this.onProgressListener= onProgressListener;
     }
 
-    public void addPOSTPair(String name, String v){
-        postData.addPair(name, v);
-    }
-    public void addPOSTPair(String name, int v){
-        postData.addPair(name, String.valueOf(v));
-    }
-    public void addPOSTPair(String name, double v){
-        postData.addPair(name, String.valueOf(v));
-    }
-    public void addPOSTPair(String name, Query objDescr){
-        postData.addPair(name, objDescr);
-    }
-
+    // Header
     public void addHeaderEntry(String name, String value){
         headerEntries.add(new HeaderEntry(name, value));
     }
 
-    public Query getPOSTQuery(){
-        return postData;
+    // Body / Data
+    public void addRequestDataPair(String name, String v){
+        requestData.addPair(name, v);
     }
+    public void addRequestDataPair(String name, int v){
+        requestData.addPair(name, String.valueOf(v));
+    }
+    public void addRequestDataPair(String name, double v){
+        requestData.addPair(name, String.valueOf(v));
+    }
+    public void addRequestDataPair(String name, Query objDescr){
+        requestData.addPair(name, objDescr);
+    }
+
+
+    public Query getRequestData(){
+        return requestData;
+    }
+
+
+
+    // Encryption
     public boolean encryptPOSTQuery(SecretKey key){
-        return postData.encryptValue(key);
+        return requestData.encryptValue(key);
     }
 
 
-    public void setContentType(String contentType){
-        this.contentType= contentType;
-    }
-
-    public void setMethod(String method){
-        this.method= method;
-    }
-
+    // Run
     public void start(String adr){
-        this.execute(adr, postData.build(buildType));
+        this.execute(adr, requestData.build(queryType));
     }
 
+
+
+    // JOB
     @Override
     protected void onPreExecute() {
         jObj=null;
@@ -147,7 +125,7 @@ public class ServerConnectionManager extends AsyncTask<String, Integer, Integer>
 
         try {
             publishProgress(0);
-            if(method.equals(METHOD_GET) ) {
+            if(requestMethod.equals(METHOD_GET) ) {
                 Log.e("URL", params[0]+"?"+params[1]);
                 url = new URL(params[0] + "?" + params[1]);
             }else
@@ -155,14 +133,12 @@ public class ServerConnectionManager extends AsyncTask<String, Integer, Integer>
 
             publishProgress(10);
             httpURLConnection = (HttpURLConnection) url.openConnection();
-            httpURLConnection.setRequestMethod(method);
+            httpURLConnection.setRequestMethod(requestMethod);
 
             if(timeout>0)
                 httpURLConnection.setConnectTimeout(timeout);
 
             publishProgress(20);
-            if(!contentType.isEmpty())
-                httpURLConnection.setRequestProperty("Content-type", contentType);
 
             if(headerEntries.size()>0){
                 for(int i=0; i<headerEntries.size(); i++){
@@ -173,7 +149,7 @@ public class ServerConnectionManager extends AsyncTask<String, Integer, Integer>
             publishProgress(30);
             httpURLConnection.setDoInput(true);
 
-            if(!method.equals(METHOD_GET)) {
+            if(!requestMethod.equals(METHOD_GET)) {
                 httpURLConnection.setDoOutput(true);
                 PrintWriter urlOut = new PrintWriter(httpURLConnection.getOutputStream());
                 urlOut.print(params[1]);
@@ -190,7 +166,7 @@ public class ServerConnectionManager extends AsyncTask<String, Integer, Integer>
             else
                 is=httpURLConnection.getInputStream();
 
-            if(outtype.equals(OUTTYPE_JSON))
+            if(responseType.equals(RESPONSE_TYPE_JSON))
                 jObj = JSONParser.getJSONFrmUrl(is);
             else {
                 jObj= new JSONObject();
